@@ -4,13 +4,27 @@ import { Environment, Request } from '../types';
 interface RequestPanelProps {
   request: Request;
   environments: Environment[];
+  targetUrls: Record<string, string>;
+  useProxy: Record<string, boolean>;
+  onUpdateRequest: (
+    method: string,
+    params: Array<{ key: string; value: string; enabled: boolean }>,
+    headers: Array<{ key: string; value: string; enabled: boolean }>,
+    body: string,
+    targetUrls: Record<string, string>,
+    useProxy: Record<string, boolean>
+  ) => void;
 }
 
-export const RequestPanel: React.FC<RequestPanelProps> = ({ request, environments }) => {
+export const RequestPanel: React.FC<RequestPanelProps> = ({ 
+  request, 
+  environments,
+  targetUrls,
+  useProxy,
+  onUpdateRequest
+}) => {
   const [activeTab, setActiveTab] = useState('params');
-  const [method, setMethod] = useState(request.method);
-  const [targetAUrl, setTargetAUrl] = useState('');
-  const [targetBUrl, setTargetBUrl] = useState('');
+  const [method, setMethod] = useState(request.method || 'POST');
   const [params, setParams] = useState<Array<{ key: string; value: string; enabled: boolean }>>([
     { key: 'limit', value: '10', enabled: true },
     { key: 'offset', value: '0', enabled: true },
@@ -20,27 +34,52 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({ request, environment
     { key: 'Accept', value: 'application/json', enabled: true },
   ]);
   const [body, setBody] = useState(
-    JSON.stringify({ name: "New Item", status: "active" }, null, 2)
+    JSON.stringify({
+      name: "John Doe",
+      username: "johndoe",
+      email: "john@example.com"
+    }, null, 2)
   );
   const [bodyType, setBodyType] = useState('JSON');
   const [authType, setAuthType] = useState('Bearer Token');
   const [token, setToken] = useState('{{token}}');
+  const [localTargetUrls, setLocalTargetUrls] = useState<Record<string, string>>(targetUrls);
+  const [localUseProxy, setLocalUseProxy] = useState<Record<string, boolean>>(useProxy);
 
-  const methods = ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
+  const methods = ['POST', 'GET', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'];
   const bodyTypes = ['None', 'Form Data', 'JSON', 'XML', 'Raw', 'Binary'];
   const authTypes = ['No Auth', 'Basic Auth', 'Bearer Token', 'OAuth 2.0', 'API Key'];
 
-  // Initialize environment-specific URLs
+  // Initialize method and URLs when request changes
   useEffect(() => {
-    const targetA = environments.find(e => e.id === 'target_a');
-    const targetB = environments.find(e => e.id === 'target_b');
-    
-    setTargetAUrl(targetA?.urls?.[request.id] || request.url);
-    setTargetBUrl(targetB?.urls?.[request.id] || request.url);
-  }, [request, environments]);
+    setMethod(request.method || 'POST');
+    setLocalTargetUrls(targetUrls);
+    setLocalUseProxy(useProxy);
+  }, [request, targetUrls, useProxy]);
+
+  // Update parent component with request details
+  useEffect(() => {
+    onUpdateRequest(method, params, headers, body, localTargetUrls, localUseProxy);
+  }, [method, params, headers, body, localTargetUrls, localUseProxy, onUpdateRequest]);
+
+  // Handle URL changes for a specific environment
+  const handleUrlChange = (envId: string, url: string) => {
+    setLocalTargetUrls(prev => ({
+      ...prev,
+      [envId]: url
+    }));
+  };
+
+  // Handle proxy toggle for a specific environment
+  const handleProxyToggle = (envId: string) => {
+    setLocalUseProxy(prev => ({
+      ...prev,
+      [envId]: !prev[envId]
+    }));
+  };
 
   return (
-    <div className="p-4 border-b border-gray-300 overflow-y-auto">
+    <div className="p-4 border-b border-gray-300 overflow-y-auto max-h-[40vh]">
       <div className="flex items-center mb-4">
         <select 
           className="bg-gray-100 border border-gray-300 rounded px-3 py-2"
@@ -53,29 +92,40 @@ export const RequestPanel: React.FC<RequestPanelProps> = ({ request, environment
         </select>
       </div>
       
-      <div className="grid grid-cols-2 gap-4 mb-4">
-        <div className="flex items-center">
-          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: '#4CAF50' }}></div>
-          <span className="text-sm font-medium mr-2">Target A:</span>
-          <input 
-            type="text" 
-            className="flex-1 border border-gray-300 px-3 py-2 rounded"
-            value={targetAUrl}
-            onChange={(e) => setTargetAUrl(e.target.value)}
-            placeholder="Target A URL"
-          />
-        </div>
-        <div className="flex items-center">
-          <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: '#2196F3' }}></div>
-          <span className="text-sm font-medium mr-2">Target B:</span>
-          <input 
-            type="text" 
-            className="flex-1 border border-gray-300 px-3 py-2 rounded"
-            value={targetBUrl}
-            onChange={(e) => setTargetBUrl(e.target.value)}
-            placeholder="Target B URL"
-          />
-        </div>
+      <div className="grid grid-cols-1 gap-4 mb-4">
+        {environments.map(env => (
+          <div key={env.id} className="flex flex-col">
+            <div className="flex items-center mb-2">
+              <div className="w-3 h-3 rounded-full mr-2" style={{ backgroundColor: env.color }}></div>
+              <span className="text-sm font-medium mr-2">{env.name}:</span>
+            </div>
+            <div className="flex items-center">
+              <input 
+                type="text" 
+                className="flex-1 border border-gray-300 px-3 py-2 rounded-l"
+                value={localTargetUrls[env.id] || ''}
+                onChange={(e) => handleUrlChange(env.id, e.target.value)}
+                placeholder={`${env.name} URL`}
+              />
+              <div className="bg-gray-100 border border-gray-300 border-l-0 rounded-r px-3 py-2 flex items-center">
+                <label className="flex items-center cursor-pointer">
+                  <input 
+                    type="checkbox" 
+                    className="mr-2"
+                    checked={localUseProxy[env.id] || false}
+                    onChange={() => handleProxyToggle(env.id)}
+                  />
+                  <span className="text-sm">Use CORS Proxy</span>
+                </label>
+              </div>
+            </div>
+            {localUseProxy[env.id] && (
+              <div className="mt-1 text-xs text-gray-500">
+                Using proxy: https://corsproxy.io/?{encodeURIComponent(localTargetUrls[env.id] || '')}
+              </div>
+            )}
+          </div>
+        ))}
       </div>
       
       <div className="mb-4">

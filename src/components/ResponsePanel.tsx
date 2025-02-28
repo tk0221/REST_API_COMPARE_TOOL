@@ -29,12 +29,48 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
   useEffect(() => {
     if (compareMode && Object.keys(responses).length >= 2) {
       const envIds = Object.keys(responses);
-      const diffs = findDifferences(
-        JSON.parse(responses[envIds[0]].body),
-        JSON.parse(responses[envIds[1]].body),
-        ''
-      );
-      setDifferences(diffs);
+      try {
+        // Try to parse JSON for comparison
+        let leftData, rightData;
+        
+        try {
+          leftData = JSON.parse(responses[envIds[0]].body);
+        } catch (e) {
+          leftData = responses[envIds[0]].body;
+        }
+        
+        try {
+          rightData = JSON.parse(responses[envIds[1]].body);
+        } catch (e) {
+          rightData = responses[envIds[1]].body;
+        }
+        
+        // If both are strings and not JSON, compare them directly
+        if (typeof leftData === 'string' && typeof rightData === 'string') {
+          if (leftData === rightData) {
+            setDifferences([]);
+          } else {
+            setDifferences([{
+              path: '/',
+              type: 'changed',
+              leftValue: 'Text content differs',
+              rightValue: 'Text content differs'
+            }]);
+          }
+        } else {
+          // Compare JSON objects
+          const diffs = findDifferences(leftData, rightData, '');
+          setDifferences(diffs);
+        }
+      } catch (error) {
+        console.error("Error comparing responses:", error);
+        setDifferences([{
+          path: '/',
+          type: 'changed',
+          leftValue: 'Error comparing content',
+          rightValue: 'Error comparing content'
+        }]);
+      }
     }
   }, [compareMode, responses]);
   
@@ -127,6 +163,25 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
         </pre>
       );
     } catch (e) {
+      // Check if it's HTML content
+      if (body.trim().startsWith('<') && body.includes('</')) {
+        return (
+          <div className="bg-gray-50 p-4 rounded overflow-auto">
+            <div className="text-sm mb-2 text-gray-500">HTML Response:</div>
+            <iframe 
+              srcDoc={body}
+              className="w-full h-96 border-0"
+              title="HTML Response"
+              sandbox="allow-same-origin"
+            ></iframe>
+            <details className="mt-2">
+              <summary className="text-sm text-blue-500 cursor-pointer">View HTML Source</summary>
+              <pre className="mt-2 text-xs overflow-auto p-2 bg-gray-100 rounded">{body}</pre>
+            </details>
+          </div>
+        );
+      }
+      
       return (
         <pre className="bg-gray-50 p-4 rounded overflow-auto text-sm">
           {body}
@@ -169,7 +224,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
     
     return (
       <div className="flex flex-col h-full">
-        <div className="flex justify-between items-center mb-4">
+        <div className="flex justify-between items-center mb-4 p-4">
           <div className="flex space-x-4">
             <div>
               <span 
@@ -177,6 +232,11 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
                 style={{ backgroundColor: env1.color }}
               ></span>
               <span className="font-medium">{env1.name}</span>
+              {responses[envIds[0]].url && (
+                <span className="ml-2 text-xs text-gray-500">
+                  {responses[envIds[0]].url}
+                </span>
+              )}
             </div>
             <div>
               <span 
@@ -184,6 +244,11 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
                 style={{ backgroundColor: env2.color }}
               ></span>
               <span className="font-medium">{env2.name}</span>
+              {responses[envIds[1]].url && (
+                <span className="ml-2 text-xs text-gray-500">
+                  {responses[envIds[1]].url}
+                </span>
+              )}
             </div>
           </div>
           
@@ -203,7 +268,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
           </div>
         </div>
         
-        <div className="flex-1 overflow-auto">
+        <div className="flex-1 overflow-auto px-4">
           <div className="grid grid-cols-2 gap-4 h-full">
             <div className="overflow-auto">
               {renderResponseBody(responses[envIds[0]].body, envIds[0])}
@@ -214,7 +279,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
           </div>
         </div>
         
-        <div className="mt-4 p-4 bg-gray-50 rounded border border-gray-200">
+        <div className="mt-4 p-4 bg-gray-50 rounded border border-gray-200 mx-4 mb-4">
           <h3 className="font-medium mb-2">Differences</h3>
           <div className="max-h-32 overflow-y-auto">
             {differences.length === 0 ? (
@@ -272,8 +337,8 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
   }
   
   return (
-    <div className="flex-1 flex flex-col overflow-hidden p-4">
-      <div className="flex justify-between items-center mb-4">
+    <div className="flex-1 flex flex-col overflow-hidden">
+      <div className="flex justify-between items-center p-4">
         <div className="flex">
           {Object.keys(responses).map(envId => {
             const env = getEnvironmentById(envId);
@@ -295,8 +360,14 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
                   style={{ backgroundColor: env.color }}
                 ></span>
                 {env.name}
-                <span className="ml-2 text-xs bg-gray-200 px-2 py-0.5 rounded">
-                  {responses[envId].status}
+                <span className={`ml-2 text-xs px-2 py-0.5 rounded ${
+                  responses[envId].status >= 200 && responses[envId].status < 300 
+                    ? 'bg-green-200' 
+                    : responses[envId].status === 0 
+                      ? 'bg-red-200' 
+                      : 'bg-yellow-200'
+                }`}>
+                  {responses[envId].status || 'Error'}
                 </span>
               </button>
             );
@@ -315,12 +386,12 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
         </div>
       </div>
       
-      <div className="flex-1 bg-white border border-gray-300 rounded overflow-hidden">
+      <div className="flex-1 bg-white border border-gray-300 rounded mx-4 mb-4 overflow-hidden">
         {compareMode ? (
           renderComparisonView()
-        ) : activeTab && responses[activeTab] ? (
-          <div className="p-4 h-full flex flex-col">
-            <div className="flex justify-between items-center mb-4">
+        ) : activeTab && (
+          <div className="h-full flex flex-col">
+            <div className="flex justify-between items-center p-4 border-b border-gray-300">
               <div>
                 <span className="font-medium">Status:</span> 
                 <span className={`ml-2 ${
@@ -328,7 +399,7 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
                     ? 'text-green-600'
                     : 'text-red-600'
                 }`}>
-                  {responses[activeTab].status}
+                  {responses[activeTab].status || 'Error'}
                 </span>
               </div>
               <div>
@@ -341,14 +412,14 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
               </div>
             </div>
             
-            <div className="flex border-b border-gray-300 mb-4">
-              <button 
-                className={`px-4 py-2 ${responseViewTab === 'body' ? 'border-b-2 border-blue-500' : ''}`}
+            <div className="border-b border-gray-300">
+              <button
+                className={`px-4 py-2 ${responseViewTab === 'body' ? 'border-b- 2 border-blue-500' : ''}`}
                 onClick={() => setResponseViewTab('body')}
               >
                 Body
               </button>
-              <button 
+              <button
                 className={`px-4 py-2 ${responseViewTab === 'headers' ? 'border-b-2 border-blue-500' : ''}`}
                 onClick={() => setResponseViewTab('headers')}
               >
@@ -356,13 +427,16 @@ export const ResponsePanel: React.FC<ResponsePanelProps> = ({
               </button>
             </div>
             
-            <div className="flex-1 overflow-auto">
-              {responseViewTab === 'body' && renderResponseBody(responses[activeTab].body, activeTab)}
-              {responseViewTab === 'headers' && renderResponseHeaders(responses[activeTab].headers)}
+            <div className="flex-1 p-4 overflow-auto">
+              {responseViewTab === 'body' ? (
+                renderResponseBody(responses[activeTab].body, activeTab)
+              ) : (
+                renderResponseHeaders(responses[activeTab].headers)
+              )}
             </div>
           </div>
-        ) : null}
+        )}
       </div>
     </div>
   );
-};
+}

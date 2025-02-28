@@ -11,8 +11,8 @@ function App() {
       id: '1',
       name: 'User API',
       requests: [
-        { id: '1-1', name: 'Get Users', method: 'GET', url: 'https://api.{{env}}.example.com/users' },
-        { id: '1-2', name: 'Get User by ID', method: 'GET', url: 'https://api.{{env}}.example.com/users/{{userId}}' },
+        { id: '1-1', name: 'Get Users', method: 'POST', url: 'https://api.{{env}}.example.com/users' },
+        { id: '1-2', name: 'Get User by ID', method: 'POST', url: 'https://api.{{env}}.example.com/users/{{userId}}' },
         { id: '1-3', name: 'Create User', method: 'POST', url: 'https://api.{{env}}.example.com/users' }
       ]
     },
@@ -20,8 +20,8 @@ function App() {
       id: '2',
       name: 'Product API',
       requests: [
-        { id: '2-1', name: 'Get Products', method: 'GET', url: 'https://api.{{env}}.example.com/products' },
-        { id: '2-2', name: 'Get Product by ID', method: 'GET', url: 'https://api.{{env}}.example.com/products/{{productId}}' }
+        { id: '2-1', name: 'Get Products', method: 'POST', url: 'https://api.{{env}}.example.com/products' },
+        { id: '2-2', name: 'Get Product by ID', method: 'POST', url: 'https://api.{{env}}.example.com/products/{{productId}}' }
       ]
     }
   ]);
@@ -31,26 +31,30 @@ function App() {
       id: 'target_a', 
       name: 'Target A', 
       color: '#4CAF50', 
-      variables: { env: 'dev', userId: '123', productId: '456' },
-      baseUrl: 'https://api.dev.example.com',
+      variables: { env: 'dev', userId: '1', productId: '1' },
+      baseUrl: 'https://google.com',
       token: 'dev-token-12345',
       urls: {
-        '1-1': 'https://target-a-api.example.com/users',
-        '1-2': 'https://target-a-api.example.com/users/{{userId}}',
-        '2-1': 'https://target-a-api.example.com/products'
+        '1-1': 'https://dummyjson.com/users',
+        '1-2': 'https://dummyjson.com/users/{{userId}}',
+        '1-3': 'https://dummyjson.com/users/add',
+        '2-1': 'https://dummyjson.com/products',
+        '2-2': 'https://dummyjson.com/products/{{productId}}'
       }
     },
     { 
       id: 'target_b', 
       name: 'Target B', 
       color: '#2196F3', 
-      variables: { env: 'qa', userId: '123', productId: '456' },
-      baseUrl: 'https://api.qa.example.com',
+      variables: { env: 'qa', userId: '1', productId: '1' },
+      baseUrl: 'https://dummyjson.com',
       token: 'qa-token-67890',
       urls: {
-        '1-1': 'https://target-b-api.example.com/users',
-        '1-2': 'https://target-b-api.example.com/users/{{userId}}',
-        '2-1': 'https://target-b-api.example.com/products'
+        '1-1': 'https://dummyjson.com/users',
+        '1-2': 'https://dummyjson.com/users/{{userId}}',
+        '1-3': 'https://dummyjson.com/users/add',
+        '2-1': 'https://dummyjson.com/products',
+        '2-2': 'https://dummyjson.com/products/{{productId}}'
       }
     }
   ]);
@@ -59,10 +63,31 @@ function App() {
   const [selectedEnvironments, setSelectedEnvironments] = useState<string[]>(['target_a', 'target_b']);
   const [responses, setResponses] = useState<Record<string, Response>>({});
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [requestParams, setRequestParams] = useState<Array<{ key: string; value: string; enabled: boolean }>>([]);
+  const [requestHeaders, setRequestHeaders] = useState<Array<{ key: string; value: string; enabled: boolean }>>([]);
+  const [requestBody, setRequestBody] = useState<string>('');
+  const [requestMethod, setRequestMethod] = useState<string>('POST');
+  const [targetUrls, setTargetUrls] = useState<Record<string, string>>({});
+  const [useProxy, setUseProxy] = useState<Record<string, boolean>>({
+    target_a: true,
+    target_b: true
+  });
 
   const handleRequestSelect = (request: Request) => {
     setSelectedRequest(request);
     setResponses({});
+    setRequestMethod(request.method || 'POST');
+    
+    // Initialize target URLs when a request is selected
+    const urls: Record<string, string> = {};
+    environments.forEach(env => {
+      if (env.urls && env.urls[request.id]) {
+        urls[env.id] = env.urls[request.id];
+      } else {
+        urls[env.id] = request.url;
+      }
+    });
+    setTargetUrls(urls);
   };
 
   const handleEnvironmentToggle = (envId: string) => {
@@ -73,64 +98,178 @@ function App() {
     );
   };
 
+  const updateRequestDetails = (
+    method: string,
+    params: Array<{ key: string; value: string; enabled: boolean }>,
+    headers: Array<{ key: string; value: string; enabled: boolean }>,
+    body: string,
+    updatedUrls: Record<string, string>,
+    updatedUseProxy: Record<string, boolean>
+  ) => {
+    setRequestMethod(method);
+    setRequestParams(params);
+    setRequestHeaders(headers);
+    setRequestBody(body);
+    setTargetUrls(updatedUrls);
+    setUseProxy(updatedUseProxy);
+  };
+
   const handleSendRequest = async () => {
     if (!selectedRequest) return;
     
     setIsLoading(true);
+    setResponses({});
     const newResponses: Record<string, Response> = {};
     
-    // Simulate API calls to different environments
+    // Make actual API calls to different environments
     for (const envId of selectedEnvironments) {
       const env = environments.find(e => e.id === envId);
       if (!env) continue;
       
-      // Get environment-specific URL if available, otherwise use the default URL
-      let url = env.urls && env.urls[selectedRequest.id] 
-        ? env.urls[selectedRequest.id] 
-        : selectedRequest.url;
+      // Get the URL for this environment from the targetUrls state
+      let url = targetUrls[envId] || '';
+      if (!url) {
+        console.error(`No URL found for environment ${envId}`);
+        continue;
+      }
       
       // Replace variables in URL
       Object.entries(env.variables).forEach(([key, value]) => {
         url = url.replace(`{{${key}}}`, value.toString());
       });
       
+      // Add query parameters
+      if (requestParams.length > 0) {
+        const enabledParams = requestParams.filter(p => p.enabled);
+        if (enabledParams.length > 0) {
+          const queryString = enabledParams
+            .map(p => `${encodeURIComponent(p.key)}=${encodeURIComponent(p.value)}`)
+            .join('&');
+          url += (url.includes('?') ? '&' : '?') + queryString;
+        }
+      }
+      
+      // Prepare headers
+      const headers: Record<string, string> = {};
+      
+      // Add custom headers
+      requestHeaders.forEach(header => {
+        if (header.enabled && header.key) {
+          headers[header.key] = header.value;
+        }
+      });
+      
+      // Add content type if not already set
+      if (!headers['Content-Type'] && requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+        headers['Content-Type'] = 'application/json';
+      }
+      
       // Add token to headers if using Bearer Token auth
-      const headers: Record<string, string> = { 'content-type': 'application/json' };
       if (env.token) {
         headers['Authorization'] = `Bearer ${env.token}`;
       }
       
-      // Simulate different responses based on environment
-      await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
-      
-      if (envId === 'target_a') {
+      try {
+        console.log(`Sending ${requestMethod} request to: ${url}`);
+        console.log('Headers:', headers);
+        console.log('Using proxy:', useProxy[envId]);
+        
+        const startTime = performance.now();
+        
+        let response;
+        let responseData;
+        
+        // Use a CORS proxy if enabled for this environment
+        if (useProxy[envId]) {
+          // Use a CORS proxy service
+          const proxyUrl = `https://corsproxy.io/?${encodeURIComponent(url)}`;
+          
+          // Prepare request options
+          const requestOptions: RequestInit = {
+            method: requestMethod,
+            headers: headers,
+            mode: 'cors',
+            cache: 'no-cache',
+            redirect: 'follow',
+            referrerPolicy: 'no-referrer'
+          };
+          
+          // Add body for non-GET requests
+          if (requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+            requestOptions.body = requestBody || JSON.stringify({
+              name: "John Doe",
+              username: "johndoe",
+              email: "john@example.com"
+            });
+          }
+          
+          // Make the actual API request through the proxy
+          response = await fetch(proxyUrl, requestOptions);
+          responseData = await response.text();
+        } else {
+          // Direct request without proxy (will likely fail for cross-origin requests)
+          const requestOptions: RequestInit = {
+            method: requestMethod,
+            headers: headers,
+            mode: 'cors',
+            cache: 'no-cache',
+            redirect: 'follow',
+            referrerPolicy: 'no-referrer'
+          };
+          
+          // Add body for non-GET requests
+          if (requestMethod !== 'GET' && requestMethod !== 'HEAD') {
+            requestOptions.body = requestBody || JSON.stringify({
+              name: "John Doe",
+              username: "johndoe",
+              email: "john@example.com"
+            });
+          }
+          
+          response = await fetch(url, requestOptions);
+          responseData = await response.text();
+        }
+        
+        const endTime = performance.now();
+        const responseTime = Math.round(endTime - startTime);
+        
+        let formattedBody = responseData;
+        
+        // Try to format as JSON if possible
+        try {
+          const jsonData = JSON.parse(responseData);
+          formattedBody = JSON.stringify(jsonData, null, 2);
+        } catch (e) {
+          // Not JSON, keep as text
+        }
+        
+        // Get response headers
+        const responseHeaders: Record<string, string> = {};
+        response.headers.forEach((value, key) => {
+          responseHeaders[key] = value;
+        });
+        
         newResponses[envId] = {
-          status: 200,
-          time: 235,
-          size: 1024,
-          headers: headers,
-          body: JSON.stringify({
-            data: [
-              { id: 1, name: 'Item 1', status: 'active' },
-              { id: 2, name: 'Item 2', status: 'pending' }
-            ],
-            meta: { total: 2, version: '1.0.0-dev' }
-          }, null, 2)
+          status: response.status,
+          time: responseTime,
+          size: new Blob([responseData]).size,
+          headers: responseHeaders,
+          body: formattedBody,
+          url: url
         };
-      } else if (envId === 'target_b') {
+      } catch (error) {
+        console.error(`Error fetching from ${url}:`, error);
         newResponses[envId] = {
-          status: 200,
-          time: 198,
-          size: 1048,
-          headers: headers,
-          body: JSON.stringify({
-            data: [
-              { id: 1, name: 'Item 1', status: 'active' },
-              { id: 2, name: 'Item 2', status: 'active' }, // Different status
-              { id: 3, name: 'Item 3', status: 'inactive' } // Extra item
-            ],
-            meta: { total: 3, version: '1.0.0-qa' }
-          }, null, 2)
+          status: 0,
+          time: 0,
+          size: 0,
+          headers: { 'error': 'true' },
+          body: JSON.stringify({ 
+            error: 'Failed to fetch', 
+            message: error instanceof Error ? error.message : 'Unknown error',
+            url: url
+          }, null, 2),
+          url: url
         };
       }
     }
@@ -159,6 +298,9 @@ function App() {
               <RequestPanel 
                 request={selectedRequest} 
                 environments={environments}
+                onUpdateRequest={updateRequestDetails}
+                targetUrls={targetUrls}
+                useProxy={useProxy}
               />
               
               <div className="border-t border-gray-300 p-4 bg-gray-50">

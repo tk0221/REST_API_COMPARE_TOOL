@@ -30,7 +30,7 @@ export interface Environment {
   baseUrl?: string;
   token?: string;
   apiKey?: string;
-  // New property to store environment-specific URLs
+  // Property to store environment-specific URLs
   urls?: Record<string, string>;
 }
 
@@ -40,6 +40,7 @@ export interface Response {
   size: number;
   headers: Record<string, string>;
   body: string;
+  url?: string;
 }
 
 export interface Difference {
